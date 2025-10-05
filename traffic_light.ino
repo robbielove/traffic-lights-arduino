@@ -375,6 +375,28 @@ void enterFlashingAmberFault() {
   holdAllRedClearance();
 }
 
+enum CyclePhase {
+  CYCLE_MAIN_TURN,
+  CYCLE_MAIN_THROUGH,
+  CYCLE_SIDE_TURN,
+  CYCLE_SIDE_THROUGH
+};
+
+CyclePhase nextCyclePhase(CyclePhase phase) {
+  switch (phase) {
+    case CYCLE_MAIN_TURN:
+      return CYCLE_MAIN_THROUGH;
+    case CYCLE_MAIN_THROUGH:
+      return CYCLE_SIDE_TURN;
+    case CYCLE_SIDE_TURN:
+      return CYCLE_SIDE_THROUGH;
+    default:
+      return CYCLE_MAIN_TURN;
+  }
+}
+
+void runPhase(CyclePhase phase);
+
 void runMainTurnPhase() {
   holdAllRedClearance();
   setVehicleAspect(MAIN_TURN_SIGNAL, VEHICLE_RED_AMBER);
@@ -423,6 +445,105 @@ void runSideThroughPhase() {
   setVehicleAspect(SIDE_THROUGH_SIGNAL, VEHICLE_RED);
 }
 
+bool gAutomaticMode = true;
+bool gManualPhaseRequested = false;
+CyclePhase gRequestedPhase = CYCLE_MAIN_TURN;
+CyclePhase gCurrentAutomaticPhase = CYCLE_MAIN_TURN;
+
+void runPhase(CyclePhase phase) {
+  switch (phase) {
+    case CYCLE_MAIN_TURN:
+      runMainTurnPhase();
+      break;
+    case CYCLE_MAIN_THROUGH:
+      runMainThroughPhase();
+      break;
+    case CYCLE_SIDE_TURN:
+      runSideTurnPhase();
+      break;
+    case CYCLE_SIDE_THROUGH:
+      runSideThroughPhase();
+      break;
+  }
+}
+
+void printSerialHelp() {
+  Serial.println(F("Traffic lights serial control commands:"));
+  Serial.println(F("  a - resume automatic cycle"));
+  Serial.println(F("  m - enter manual mode (all red until a phase is requested)"));
+  Serial.println(F("  1 - serve main turn phase (manual mode)"));
+  Serial.println(F("  2 - serve main through phase (manual mode)"));
+  Serial.println(F("  3 - serve side turn phase (manual mode)"));
+  Serial.println(F("  4 - serve side through phase (manual mode)"));
+  Serial.println(F("  ? - show this help"));
+}
+
+void handleSerialCommand(char command) {
+  switch (command) {
+    case 'a':
+    case 'A':
+      if (!gAutomaticMode) {
+        gAutomaticMode = true;
+        gManualPhaseRequested = false;
+        gCurrentAutomaticPhase = CYCLE_MAIN_TURN;
+        Serial.println(F("Automatic cycle resumed."));
+      }
+      break;
+    case 'm':
+    case 'M':
+      if (gAutomaticMode) {
+        gAutomaticMode = false;
+        gManualPhaseRequested = false;
+        holdAllRedClearance();
+        Serial.println(F("Manual mode enabled. All signals set to red."));
+      }
+      break;
+    case '1':
+      if (!gAutomaticMode) {
+        gRequestedPhase = CYCLE_MAIN_TURN;
+        gManualPhaseRequested = true;
+        Serial.println(F("Manual: serving main turn phase."));
+      }
+      break;
+    case '2':
+      if (!gAutomaticMode) {
+        gRequestedPhase = CYCLE_MAIN_THROUGH;
+        gManualPhaseRequested = true;
+        Serial.println(F("Manual: serving main through phase."));
+      }
+      break;
+    case '3':
+      if (!gAutomaticMode) {
+        gRequestedPhase = CYCLE_SIDE_TURN;
+        gManualPhaseRequested = true;
+        Serial.println(F("Manual: serving side turn phase."));
+      }
+      break;
+    case '4':
+      if (!gAutomaticMode) {
+        gRequestedPhase = CYCLE_SIDE_THROUGH;
+        gManualPhaseRequested = true;
+        Serial.println(F("Manual: serving side through phase."));
+      }
+      break;
+    case '?':
+      printSerialHelp();
+      break;
+    default:
+      break;
+  }
+}
+
+void processSerialInput() {
+  while (Serial.available() > 0) {
+    char incoming = Serial.read();
+    if (incoming == '\r' || incoming == '\n') {
+      continue;
+    }
+    handleSerialCommand(incoming);
+  }
+}
+
 void setup() {
   auto initializeLightChannel = [](const LightChannel &channel) {
     if (channel.pin != UNUSED_PIN) {
@@ -454,19 +575,34 @@ void setup() {
     pinMode(FAULT_INPUT_PIN, INPUT);
   }
 
+  Serial.begin(115200);
+  Serial.println();
+  Serial.println(F("Traffic light controller ready."));
+  printSerialHelp();
+
   setAllVehicleAspect(VEHICLE_RED);
   setAllPedestrianAspect(PED_DONT_WALK);
   runStartupFlash();
 }
 
 void loop() {
+  processSerialInput();
+
   if (digitalRead(FAULT_INPUT_PIN) == LOW) {
     enterFlashingAmberFault();
     return;
   }
 
-  runMainTurnPhase();
-  runMainThroughPhase();
-  runSideTurnPhase();
-  runSideThroughPhase();
+  if (!gAutomaticMode) {
+    if (gManualPhaseRequested) {
+      gManualPhaseRequested = false;
+      runPhase(gRequestedPhase);
+      processSerialInput();
+    }
+    return;
+  }
+
+  runPhase(gCurrentAutomaticPhase);
+  gCurrentAutomaticPhase = nextCyclePhase(gCurrentAutomaticPhase);
+  processSerialInput();
 }
