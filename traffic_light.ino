@@ -382,6 +382,21 @@ enum CyclePhase {
   CYCLE_SIDE_THROUGH
 };
 
+const __FlashStringHelper *cyclePhaseName(CyclePhase phase) {
+  switch (phase) {
+    case CYCLE_MAIN_TURN:
+      return F("main turn");
+    case CYCLE_MAIN_THROUGH:
+      return F("main through");
+    case CYCLE_SIDE_TURN:
+      return F("side turn");
+    case CYCLE_SIDE_THROUGH:
+      return F("side through");
+    default:
+      return F("unknown");
+  }
+}
+
 CyclePhase nextCyclePhase(CyclePhase phase) {
   switch (phase) {
     case CYCLE_MAIN_TURN:
@@ -450,6 +465,24 @@ bool gManualPhaseRequested = false;
 CyclePhase gRequestedPhase = CYCLE_MAIN_TURN;
 CyclePhase gCurrentAutomaticPhase = CYCLE_MAIN_TURN;
 
+void printStatus() {
+  if (gAutomaticMode) {
+    Serial.println(F("Mode: automatic"));
+    Serial.print(F("Current automatic phase: "));
+    Serial.println(cyclePhaseName(gCurrentAutomaticPhase));
+    Serial.print(F("Next automatic phase: "));
+    Serial.println(cyclePhaseName(nextCyclePhase(gCurrentAutomaticPhase)));
+  } else {
+    Serial.println(F("Mode: manual"));
+    Serial.print(F("Manual request: "));
+    if (gManualPhaseRequested) {
+      Serial.println(cyclePhaseName(gRequestedPhase));
+    } else {
+      Serial.println(F("none"));
+    }
+  }
+}
+
 void runPhase(CyclePhase phase) {
   switch (phase) {
     case CYCLE_MAIN_TURN:
@@ -475,6 +508,7 @@ void printSerialHelp() {
   Serial.println(F("  2 - serve main through phase (manual mode)"));
   Serial.println(F("  3 - serve side turn phase (manual mode)"));
   Serial.println(F("  4 - serve side through phase (manual mode)"));
+  Serial.println(F("  s - show current mode and selected phase"));
   Serial.println(F("  ? - show this help"));
 }
 
@@ -525,6 +559,10 @@ void handleSerialCommand(char command) {
         gManualPhaseRequested = true;
         Serial.println(F("Manual: serving side through phase."));
       }
+      break;
+    case 's':
+    case 'S':
+      printStatus();
       break;
     case '?':
       printSerialHelp();
